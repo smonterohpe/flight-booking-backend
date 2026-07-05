@@ -1,0 +1,16 @@
+[Unit]
+Description=Flight Booking API (FastAPI + Gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=flightapp
+Group=flightapp
+WorkingDirectory=/opt/flight-booking-backend
+EnvironmentFile=/opt/flight-booking-backend/.env
+ExecStart=/opt/flight-booking-backend/venv/bin/gunicorn app.main:app -c gunicorn_conf.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
