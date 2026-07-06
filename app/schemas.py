@@ -124,3 +124,16 @@ class HealthStatus(BaseModel):
     status: str
     database: str
     version: str
+
+
+class PingResponse(BaseModel):
+    message: str
+
+
+class SystemMetrics(BaseModel):
+    cpu_percent: float
+    ram_used_mb: float
+    ram_total_mb: float
+    disk_used_gb: float
+    disk_total_gb: float
+    uptime_seconds: int

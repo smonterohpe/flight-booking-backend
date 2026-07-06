@@ -14,6 +14,8 @@ Forma parte de la demo de continuidad de negocio junto con:
 | Método | Ruta                        | Descripción                                            |
 |--------|-----------------------------|---------------------------------------------------------|
 | GET    | `/api/health`                | Estado del servicio + conectividad a BD (monitorización) |
+| GET    | `/api/ping`                   | Ping ligero (latencia pura, sin tocar BD)                |
+| GET    | `/api/system`                 | CPU / RAM / Disco / Uptime del proceso backend (pestaña Systems) |
 | GET    | `/api/airports`               | Catálogo de aeropuertos                                  |
 | GET    | `/api/seat-classes`           | Catálogo de clases de asiento                            |
 | GET    | `/api/flights`                | Lista de vuelos (filtrable por origen/destino/fecha)     |
