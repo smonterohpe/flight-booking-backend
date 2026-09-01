@@ -3,7 +3,8 @@ import string
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -48,15 +49,30 @@ async def create_booking(payload: BookingCreate, db: AsyncSession = Depends(get_
     if seat_class is None:
         raise HTTPException(status_code=400, detail="Clase de asiento no válida")
 
-    # 3. Cliente: obtener por email o crear
+    # 3. Cliente: obtener por email O documento (ambos son UNIQUE en BD) —
+    #    reutilizamos el cliente existente si coincide cualquiera de los dos.
     customer_result = await db.execute(
-        select(Customer).where(Customer.email == payload.customer.email)
+        select(Customer).where(
+            or_(
+                Customer.email == payload.customer.email,
+                Customer.document_id == payload.customer.document_id,
+            )
+        )
     )
-    customer = customer_result.scalar_one_or_none()
+    customer = customer_result.scalars().first()
     if customer is None:
         customer = Customer(**payload.customer.model_dump())
         db.add(customer)
-        await db.flush()  # asigna customer.id sin cerrar la transacción
+        try:
+            await db.flush()  # asigna customer.id sin cerrar la transacción
+        except IntegrityError:
+            # Condición de carrera: otro request creó el mismo cliente
+            # entre nuestro SELECT y este INSERT (email/documento duplicado).
+            await db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe un cliente con ese email o documento.",
+            )
 
     # 4. Cálculo de precio y asiento
     price = round(float(flight.base_price) * float(seat_class.price_multiplier), 2)
