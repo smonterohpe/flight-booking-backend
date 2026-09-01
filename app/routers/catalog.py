@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Airport, SeatClass
-from app.schemas import AirportOut, SeatClassOut
+from app.models import Airport, Customer, SeatClass
+from app.schemas import AirportOut, CustomerOut, SeatClassOut
 
 router = APIRouter(tags=["catalog"])
 
@@ -18,4 +18,15 @@ async def list_airports(db: AsyncSession = Depends(get_db)) -> list[Airport]:
 @router.get("/seat-classes", response_model=list[SeatClassOut])
 async def list_seat_classes(db: AsyncSession = Depends(get_db)) -> list[SeatClass]:
     result = await db.execute(select(SeatClass).order_by(SeatClass.id))
+    return list(result.scalars().all())
+
+
+@router.get("/customers", response_model=list[CustomerOut])
+async def list_customers(
+    limit: int = Query(default=100, le=1000),
+    db: AsyncSession = Depends(get_db),
+) -> list[Customer]:
+    """Lista de clientes, usada por la vista 'Clientes' del frontend de negocio."""
+    query = select(Customer).order_by(Customer.created_at.desc()).limit(limit)
+    result = await db.execute(query)
     return list(result.scalars().all())

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models import BookingStatus, FlightStatus
 
@@ -36,7 +36,10 @@ class SeatClassOut(BaseModel):
 # ---------------------------------------------------------------------
 class CustomerCreate(BaseModel):
     full_name: str = Field(..., max_length=150)
-    email: EmailStr
+    # Formato simple (no EmailStr): EmailStr rechaza dominios "reservados"
+    # como .test/.example/.invalid, que es justo lo que usa el RBG para
+    # generar clientes de demo. Esta regex solo exige forma "algo@algo.algo".
+    email: str = Field(..., max_length=150, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     phone: str | None = Field(default=None, max_length=30)
     document_id: str = Field(..., max_length=30)
 

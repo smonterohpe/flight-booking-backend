@@ -18,6 +18,7 @@ Forma parte de la demo de continuidad de negocio junto con:
 | GET    | `/api/system`                 | CPU / RAM / Disco / Uptime del proceso backend (pestaña Systems) |
 | GET    | `/api/airports`               | Catálogo de aeropuertos                                  |
 | GET    | `/api/seat-classes`           | Catálogo de clases de asiento                            |
+| GET    | `/api/customers`              | Lista de clientes                                        |
 | GET    | `/api/flights`                | Lista de vuelos (filtrable por origen/destino/fecha)     |
 | GET    | `/api/flights/{id}`           | Detalle de un vuelo                                      |
 | POST   | `/api/bookings`                | **Crea una reserva** (usado por el RBG del frontend)     |
