@@ -81,6 +81,17 @@ inverso delante (igual que en el frontend), apuntando a
   según el diseño acordado, la Observability Console lo consulta
   directamente contra la API de Zerto.
 
+## Scripts de demo
+
+En `scripts/` hay utilidades para apoyar demostraciones de continuidad
+de negocio en directo:
+
+- `simulate-human-error.sh` / `rollback-human-error.sh` — rompen y
+  restauran el backend a propósito, para simular un despliegue erróneo
+- `zerto_insert-checkpoint.sh` — inserta un checkpoint manual en un VPG
+  de Zerto antes de provocar el fallo (requiere configurar credenciales
+  en `scripts/.env`, ver `scripts/README.md`)
+
 ## Próximos pasos
 
 1. `flight-booking-frontend`: UI + generador aleatorio de reservas (RBG) que llama a `POST /api/bookings`
