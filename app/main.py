@@ -1,14 +1,31 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import bookings, catalog, flights, health, kpis
+from app.routers import rbg as rbg_router
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Arranca el RBG automáticamente con el ritmo por defecto (20/min)
+    # en cuanto el servicio levanta — sin necesidad de que haya ningún
+    # navegador abierto.
+    from app.rbg import rbg
+    rbg.start(settings.rbg_default_rate)
+    yield
+    # Limpieza al apagar el servicio
+    rbg.stop()
+
 
 app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
+    lifespan=lifespan,
     description=(
         "API REST del simulador de reservas de vuelos. "
         "Sirve tanto al frontend de negocio (con su generador aleatorio "
@@ -30,6 +47,7 @@ app.include_router(catalog.router, prefix="/api")
 app.include_router(flights.router, prefix="/api")
 app.include_router(bookings.router, prefix="/api")
 app.include_router(kpis.router, prefix="/api")
+app.include_router(rbg_router.router, prefix="/api")
 
 
 @app.get("/", tags=["root"])

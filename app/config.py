@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Nº de asientos por defecto si un vuelo no especifica total_seats
     default_total_seats: int = 180
 
+    # Ritmo por defecto del RBG al arrancar el servicio (reservas/minuto)
+    rbg_default_rate: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:
