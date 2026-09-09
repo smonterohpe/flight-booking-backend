@@ -1,11 +1,17 @@
 import multiprocessing
 
-# Escucha en todas las interfaces, puerto 8000 (equivalente al :80000 /
-# :8000 del backend en el diagrama de referencia)
+# Escucha en todas las interfaces, puerto 8000
 bind = "0.0.0.0:8000"
 
 worker_class = "uvicorn.workers.UvicornWorker"
-workers = multiprocessing.cpu_count() * 2 + 1
+
+# IMPORTANTE: debe ser 1 worker para que el singleton RBGManager
+# (generador aleatorio de reservas) sea único en todo el proceso.
+# Con múltiples workers, cada uno tiene su propia copia del singleton
+# y el start/stop desde el frontend solo afecta al worker que recibe
+# la petición — los demás siguen generando. Con asyncio + uvicorn,
+# 1 worker maneja miles de conexiones concurrentes sin problema.
+workers = 1
 
 timeout = 30
 graceful_timeout = 30
