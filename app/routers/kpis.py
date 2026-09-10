@@ -27,7 +27,7 @@ async def get_summary(
         func.coalesce(func.sum(Booking.price), 0).label("total_revenue"),
         func.max(Booking.created_at).label("last_booking_at"),
         func.count(
-            func.distinct(func.cast(Booking.created_at, text("date")))
+            func.distinct(func.date_trunc('day', Booking.created_at))
         ).label("days_count"),
     ).where(Booking.status == BookingStatus.CONFIRMED)
 
