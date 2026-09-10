@@ -32,9 +32,9 @@ async def get_summary(
     ).where(Booking.status == BookingStatus.CONFIRMED)
 
     if from_time:
-        q = q.where(Booking.created_at >= from_time)
+        q = q.where(Booking.created_at >= from_time.replace(tzinfo=None))
     if to_time:
-        q = q.where(Booking.created_at <= to_time)
+        q = q.where(Booking.created_at <= to_time.replace(tzinfo=None))
 
     result = await db.execute(q)
     row = result.mappings().one()
@@ -75,13 +75,13 @@ async def get_timeseries(
 
     if from_time:
         query += " AND minute >= :from_time"
-        params["from_time"] = from_time
+        params["from_time"] = from_time.replace(tzinfo=None)
     else:
         query += " AND minute >= now() - interval '1 hour'"
 
     if to_time:
         query += " AND minute <= :to_time"
-        params["to_time"] = to_time
+        params["to_time"] = to_time.replace(tzinfo=None)
 
     query += " ORDER BY minute"
 
