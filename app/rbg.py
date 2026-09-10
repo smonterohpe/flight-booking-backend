@@ -3,15 +3,17 @@ RBG — Random Booking Generator (backend edition)
 =================================================
 Proceso asyncio que genera reservas aleatorias de forma continua
 directamente contra la base de datos, sin necesidad de ningún
-navegador abierto. Se arranca automáticamente al iniciar el backend
-y expone endpoints de control en /api/rbg/*.
+navegador abierto.
 
-La lógica de generación es idéntica a la del RBG del frontend
-(mismos nombres ficticios, mismo reparto de clases, mismo cálculo
-de precio), trasladada aquí para que sobreviva al cierre de pestañas.
+Mejoras:
+- Intervalos variables con distribución exponencial (proceso de Poisson)
+  → el ritmo oscila de forma natural en vez de ser constante.
+- Horario de negocio configurable (por defecto 08:00-22:00 UTC):
+  fuera de ese rango el generador duerme y no produce reservas.
 """
 import asyncio
 import logging
+import math
 import random
 import string
 from datetime import datetime, timezone
@@ -19,7 +21,6 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Datos de demo para la generación aleatoria ────────────────────────────────
 _FIRST_NAMES = [
     "Laura", "Carlos", "Maria", "Javier", "Lucia", "Pablo",
     "Elena", "Diego", "Marta", "Alvaro", "Sofia", "Hugo",
@@ -52,20 +53,24 @@ def _random_ref() -> str:
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 
-# ── Clase principal ───────────────────────────────────────────────────────────
 class RBGManager:
     def __init__(self) -> None:
         self._task: Optional[asyncio.Task] = None
         self._running: bool = False
         self._rate_per_minute: int = 20
+        self._start_hour: int = 8
+        self._end_hour: int = 22
         self._generated: int = 0
         self._errors: int = 0
         self._started_at: Optional[datetime] = None
         self._last_booking_ref: Optional[str] = None
 
-    # ── Generación de una reserva ─────────────────────────────────────────────
+    def _is_business_hours(self) -> bool:
+        hour = datetime.now(timezone.utc).hour
+        return self._start_hour <= hour < self._end_hour
+
     async def _generate_one(self) -> None:
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
         from sqlalchemy.exc import IntegrityError
 
         from app.database import AsyncSessionLocal
@@ -74,7 +79,6 @@ class RBGManager:
         )
 
         async with AsyncSessionLocal() as db:
-            # 1. Vuelo aleatorio entre los programados
             result = await db.execute(
                 select(Flight).where(Flight.status == FlightStatus.SCHEDULED)
             )
@@ -84,7 +88,6 @@ class RBGManager:
                 return
             flight = random.choice(flights)
 
-            # 2. Clase de asiento (con pesos)
             seat_class_code = _pick_class()
             result = await db.execute(
                 select(SeatClass).where(SeatClass.code == seat_class_code)
@@ -93,14 +96,12 @@ class RBGManager:
             if not seat_class:
                 return
 
-            # 3. Cliente de demo único
             tag = random.randint(100_000, 9_999_999)
             first = random.choice(_FIRST_NAMES)
             last = random.choice(_LAST_NAMES)
             email = f"{first.lower()}.{last.lower()}{tag}@rbg-auto.test"
             doc = _random_doc()
 
-            from sqlalchemy import or_
             res = await db.execute(
                 select(Customer).where(
                     or_(Customer.email == email, Customer.document_id == doc)
@@ -120,7 +121,6 @@ class RBGManager:
                     await db.rollback()
                     return
 
-            # 4. Reserva
             price = round(float(flight.base_price) * float(seat_class.price_multiplier), 2)
             row = random.randint(1, max(flight.total_seats // 6, 1))
             seat_number = f"{row}{random.choice('ABCDEF')}"
@@ -139,13 +139,27 @@ class RBGManager:
             await db.commit()
             self._last_booking_ref = ref
 
-    # ── Bucle principal ───────────────────────────────────────────────────────
     async def _run(self) -> None:
         while self._running:
-            interval = max(60.0 / self._rate_per_minute, 0.5)
+            # ── Horario de negocio ────────────────────────────────────────
+            if not self._is_business_hours():
+                # Fuera de horario: duerme 60s sin generar reservas.
+                await asyncio.sleep(60)
+                continue
+
+            # ── Intervalo variable (proceso de Poisson) ───────────────────
+            # Distribución exponencial: -mean * ln(U), U ~ Uniform(0,1).
+            # Produce la variabilidad natural "a ráfagas" visible en el
+            # dashboard: algunos minutos con muchas reservas, otros con
+            # pocas, en vez de una línea completamente plana.
+            mean_interval = max(60.0 / self._rate_per_minute, 0.3)
+            interval = -mean_interval * math.log(max(random.random(), 1e-9))
+            interval = min(interval, mean_interval * 5)  # cap a 5× la media
+
             await asyncio.sleep(interval)
             if not self._running:
                 break
+
             try:
                 await self._generate_one()
                 self._generated += 1
@@ -153,15 +167,15 @@ class RBGManager:
                 self._errors += 1
                 logger.error("RBG: error generando reserva: %s", exc)
 
-    # ── API pública ───────────────────────────────────────────────────────────
-    def start(self, rate_per_minute: int = 20) -> None:
+    def start(self, rate_per_minute: int = 20,
+              start_hour: int = 8, end_hour: int = 22) -> None:
         self._rate_per_minute = max(1, min(rate_per_minute, 300))
+        self._start_hour = start_hour
+        self._end_hour = end_hour
         if not self._running:
             self._running = True
             self._started_at = datetime.now(timezone.utc)
             self._task = asyncio.create_task(self._run())
-        # Si ya estaba corriendo, solo actualiza el ritmo (el próximo
-        # tick usará el nuevo intervalo automáticamente).
 
     def stop(self) -> None:
         self._running = False
@@ -173,6 +187,8 @@ class RBGManager:
     def status(self) -> dict:
         return {
             "running": self._running,
+            "in_business_hours": self._is_business_hours(),
+            "business_hours": f"{self._start_hour:02d}:00 - {self._end_hour:02d}:00 UTC",
             "rate_per_minute": self._rate_per_minute,
             "generated": self._generated,
             "errors": self._errors,
@@ -181,5 +197,4 @@ class RBGManager:
         }
 
 
-# Singleton compartido por toda la aplicación
 rbg = RBGManager()
