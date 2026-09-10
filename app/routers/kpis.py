@@ -1,36 +1,59 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models import Booking, BookingStatus
 from app.schemas import KPISummary, KPITimeseriesPoint
 
 router = APIRouter(prefix="/kpis", tags=["kpis"])
 
 
 @router.get("/summary", response_model=KPISummary)
-async def get_summary(db: AsyncSession = Depends(get_db)) -> KPISummary:
+async def get_summary(
+    from_time: datetime | None = Query(default=None, alias="from"),
+    to_time: datetime | None = Query(default=None, alias="to"),
+    db: AsyncSession = Depends(get_db),
+) -> KPISummary:
     """
-    Tarjetas KPI globales (equivalente a "Total Pedidos", "Ingresos
-    Totales", "Media/día", "Último pedido hace..." del dashboard de
-    referencia), calculadas sobre la vista v_bookings_summary.
+    KPIs filtrados por el rango temporal seleccionado en el dashboard.
+    Sin parámetros devuelve los totales históricos completos.
+    Con ?from=ISO&to=ISO devuelve los KPIs del intervalo indicado.
     """
-    result = await db.execute(text("SELECT * FROM v_bookings_summary"))
+    q = select(
+        func.count().label("total_bookings"),
+        func.coalesce(func.sum(Booking.price), 0).label("total_revenue"),
+        func.max(Booking.created_at).label("last_booking_at"),
+        func.count(
+            func.distinct(func.cast(Booking.created_at, text("date")))
+        ).label("days_count"),
+    ).where(Booking.status == BookingStatus.CONFIRMED)
+
+    if from_time:
+        q = q.where(Booking.created_at >= from_time)
+    if to_time:
+        q = q.where(Booking.created_at <= to_time)
+
+    result = await db.execute(q)
     row = result.mappings().one()
 
+    total_bookings = row["total_bookings"] or 0
+    total_revenue = float(row["total_revenue"] or 0)
     last_booking_at = row["last_booking_at"]
+    days_count = max(row["days_count"] or 1, 1)
+
     minutes_since = None
     if last_booking_at is not None:
         now = datetime.now(timezone.utc)
         minutes_since = round((now - last_booking_at).total_seconds() / 60, 1)
 
     return KPISummary(
-        total_bookings=row["total_bookings"],
-        total_revenue=float(row["total_revenue"]),
-        avg_bookings_per_day=float(row["avg_bookings_per_day"]),
-        avg_revenue_per_day=float(row["avg_revenue_per_day"]),
+        total_bookings=total_bookings,
+        total_revenue=total_revenue,
+        avg_bookings_per_day=total_bookings / days_count,
+        avg_revenue_per_day=total_revenue / days_count,
         last_booking_at=last_booking_at,
         minutes_since_last_booking=minutes_since,
     )
