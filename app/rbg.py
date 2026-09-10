@@ -140,21 +140,28 @@ class RBGManager:
             self._last_booking_ref = ref
 
     async def _run(self) -> None:
+        # Multiplicador de tasa: random walk lento entre 0.3× y 2.8×
+        # Esto produce los picos y valles naturales visibles en los
+        # dashboards de tráfico real, en vez de una línea uniforme.
+        multiplier = 1.0
+        direction = 1.0
+
         while self._running:
-            # ── Horario de negocio ────────────────────────────────────────
             if not self._is_business_hours():
-                # Fuera de horario: duerme 60s sin generar reservas.
                 await asyncio.sleep(60)
                 continue
 
-            # ── Intervalo variable (proceso de Poisson) ───────────────────
-            # Distribución exponencial: -mean * ln(U), U ~ Uniform(0,1).
-            # Produce la variabilidad natural "a ráfagas" visible en el
-            # dashboard: algunos minutos con muchas reservas, otros con
-            # pocas, en vez de una línea completamente plana.
-            mean_interval = max(60.0 / self._rate_per_minute, 0.3)
+            # Actualiza el multiplicador con un paso aleatorio pequeño
+            step = random.uniform(0.01, 0.08) * direction
+            multiplier = max(0.3, min(2.8, multiplier + step))
+            # Cambia de dirección de vez en cuando
+            if random.random() < 0.05:
+                direction *= -1
+
+            effective_rate = self._rate_per_minute * multiplier
+            mean_interval = max(60.0 / effective_rate, 0.3)
             interval = -mean_interval * math.log(max(random.random(), 1e-9))
-            interval = min(interval, mean_interval * 5)  # cap a 5× la media
+            interval = min(interval, mean_interval * 5)
 
             await asyncio.sleep(interval)
             if not self._running:
